@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"regexp"
 
 	wfv1 "github.com/argoproj/argo/pkg/apis/workflow/v1alpha1"
 	"github.com/argoproj/argo/workflow/util"
@@ -407,13 +408,30 @@ func renderChild(w *tabwriter.Writer, wf *wfv1.Workflow, nInfo renderNode, depth
 
 // Main method to print information of node in get
 func printNode(w *tabwriter.Writer, wf *wfv1.Workflow, node wfv1.NodeStatus, depth int, nodePrefix string, childPrefix string, outFmt string) {
-	nodeName := fmt.Sprintf("%s %s", jobStatusIconMap[node.Phase], node.DisplayName)
+
+	withParamRegex, _ := regexp.Compile(`^(.+?)\(([0-9]+):.+\)`)
+
+	// Cleanup the DisplayName for CLI
+	displayName := node.DisplayName
+	matches := withParamRegex.FindStringSubmatch(node.DisplayName)
+	if len(matches) > 2 {
+		displayName = fmt.Sprintf("%s[%s]", matches[1], matches[2])
+	} else if len(displayName) > 32 {
+		displayName = displayName[0:29] + "..."
+	}
+
+	message := node.Message
+	if strings.Contains(message,"didn't satisfy existing pods anti-affinity rules") {
+		message = "Waiting for an available node"
+	}
+
+	nodeName := fmt.Sprintf("%s %s", jobStatusIconMap[node.Phase], displayName)
 	var args []interface{}
 	duration := humanize.RelativeDurationShort(node.StartedAt.Time, node.FinishedAt.Time)
 	if node.Type == wfv1.NodeTypePod {
-		args = []interface{}{nodePrefix, nodeName, node.ID, duration, node.Message}
+		args = []interface{}{nodePrefix, nodeName, node.ID, duration, message}
 	} else {
-		args = []interface{}{nodePrefix, nodeName, "", "", node.Message}
+		args = []interface{}{nodePrefix, nodeName, "", "", message}
 	}
 	if outFmt == "wide" {
 		msg := args[len(args)-1]
